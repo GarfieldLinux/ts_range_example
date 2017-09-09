@@ -272,11 +272,13 @@ transform_add(TSHttpTxn txnp, struct txndata *txn_state)
     data->end = txn_state->end;
     data->content_length = txn_state->content_length;
 
+    TSDebug(PLUGIN_NAME, "transform_add start=%ld, end=%ld, content_length=%ld", data->start, data->end, data->content_length);
     if (data->end == 0) {
         data->range_length = data->content_length - data->start;
     } else {
         data->range_length = data->end - data->start + 1;
     }
+    TSDebug(PLUGIN_NAME, "transform_add range_length=%ld", data->range_length);
 
 
     TSContDataSet(connp, data);
@@ -514,6 +516,7 @@ TSRemapDoRemap(void *ih, TSHttpTxn txnp, TSRemapRequestInfo *rri)
     txn_state->end = end;
     txn_state->content_length = 0;
 
+    TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld, end=%ld", start, end);
 
     if (NULL == (txn_contp = TSContCreate((TSEventFunc) transform_plugin, NULL))) {
         if(txn_state != NULL)
