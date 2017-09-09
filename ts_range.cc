@@ -63,6 +63,9 @@ handle_transform(TSCont contp)
     int64_t towrite;
     int64_t avail;
     int64_t donewrite;
+    int64_t consume_size;
+
+    consume_size = 0;
 
     TSDebug(PLUGIN_NAME, "Entering handle_transform()");
 
@@ -92,21 +95,20 @@ handle_transform(TSCont contp)
     }
 
     towrite = TSVIONTodoGet(input_vio);
-    TSDebug(PLUGIN_NAME, "\ttoWrite is towrite=%ld, donewrite=%ld", towrite, donewrite);
+    TSDebug(PLUGIN_NAME, "\ttowrite=%ld", towrite);
     //TSDebug(PLUGIN_NAME, "\ttoWrite is %" PRId64 "", towrite);
 
     if (towrite <= 0)
         goto LDone;
 
     donewrite = TSVIONDoneGet(input_vio);
+    TSDebug(PLUGIN_NAME, "\tdonewrite=%ld", donewrite);
     avail = TSIOBufferReaderAvail(TSVIOReaderGet(input_vio));
     //TSDebug(PLUGIN_NAME, "\tavail is %" PRId64 "", avail);
     if (towrite > avail) {
         towrite = avail;
     }
 
-    int64_t consume_size;
-    consume_size = 0;
     if (data->end > 0) {
         TSDebug(PLUGIN_NAME, "data->end > 0, end=%ld", data->end);
         if (donewrite <= data->start) {
@@ -461,7 +463,7 @@ TSRemapDoRemap(void *ih, TSHttpTxn txnp, TSRemapRequestInfo *rri)
 
     const char *method, *query;
     int method_len, query_len;
-    char *f_start, *f_end;
+    const char *f_start, *f_end;
     TSCont txn_contp;
     TSMLoc ae_field, range_field;
     struct txndata *txn_state;
