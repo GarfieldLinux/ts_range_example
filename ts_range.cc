@@ -19,6 +19,8 @@ typedef struct {
     TSIOBuffer output_buffer;
     TSIOBufferReader output_reader;
 
+    bool vio_init;
+
     int64_t content_length;
     int64_t range_length;
     int64_t start;
@@ -33,6 +35,7 @@ my_data_alloc()
     data->output_vio = NULL;
     data->output_buffer = NULL;
     data->output_reader = NULL;
+    data->vio_init = false;
 
     data->content_length = 0;
     data->range_length = 0;
@@ -75,28 +78,41 @@ handle_transform(TSCont contp)
 
     data = (MyData *)TSContDataGet(contp);
     if (!data) {
-        data = my_data_alloc();
+        data                = my_data_alloc();
+        data->vio_init = true;
         data->output_buffer = TSIOBufferCreate();
         data->output_reader = TSIOBufferReaderAlloc(data->output_buffer);
-        //TSDebug(PLUGIN_NAME, "\tWriting %" PRId64 " bytes on VConn", TSVIONBytesGet(input_vio));
-
-        data->output_vio = TSVConnWrite(output_conn, contp, data->output_reader, INT64_MAX);
-
+        //TSDebug("null-transform", "\t1Writing %" PRId64 " bytes on VConn", TSVIONBytesGet(input_vio));
+        // data->output_vio = TSVConnWrite(output_conn, contp, data->output_reader, INT32_MAX);
+        data->output_vio = TSVConnWrite(output_conn, contp, data->output_reader, data->range_length);
+        // data->output_vio = TSVConnWrite(output_conn, contp, data->output_reader, TSVIONBytesGet(input_vio));
         TSContDataSet(contp, data);
+    } else if (data && !data->vio_init) {
+        data->vio_init = true;
+        data->output_buffer = TSIOBufferCreate();
+        data->output_reader = TSIOBufferReaderAlloc(data->output_buffer);
+        //TSDebug(PLUGIN_NAME, "\t2Writing %" PRId64 " bytes on VConn", TSVIONBytesGet(input_vio));
+
+        data->output_vio = TSVConnWrite(output_conn, contp, data->output_reader, data->range_length);
+        //TSContDataSet(contp, data);
     }
+
+    //TSDebug(PLUGIN_NAME, "handle_transform, start=%ld,end=%ld,range=%ld,cl=%ld", data->start,
+    //        data->end,data->range_length,data->content_length);
 
     input_buff = TSVIOBufferGet(input_vio);
 
+
     if (!input_buff) {
-        //TSVIONBytesSet(data->output_vio, TSVIONDoneGet(input_vio));
-        //TSVIONBytesSet(data->output_vio, data->done_size);
-        //TSVIOReenable(data->output_vio);
+        TSVIONBytesSet(data->output_vio, data->range_length);
+        TSDebug(PLUGIN_NAME, "!input_buff Done Get=%ld, range_length=%ld",
+                TSVIONDoneGet(data->output_vio), data->range_length);
+        TSVIOReenable(data->output_vio);
         return;
     }
 
     towrite = TSVIONTodoGet(input_vio);
-    TSDebug(PLUGIN_NAME, "\ttowrite=%ld", towrite);
-    //TSDebug(PLUGIN_NAME, "\ttoWrite is %" PRId64 "", towrite);
+    TSDebug(PLUGIN_NAME, "\ttoWrite is %" PRId64 "", towrite);
 
     if (towrite <= 0)
         goto LDone;
@@ -104,13 +120,13 @@ handle_transform(TSCont contp)
     donewrite = TSVIONDoneGet(input_vio);
     TSDebug(PLUGIN_NAME, "\tdonewrite=%ld", donewrite);
     avail = TSIOBufferReaderAvail(TSVIOReaderGet(input_vio));
-    //TSDebug(PLUGIN_NAME, "\tavail is %" PRId64 "", avail);
+    TSDebug(PLUGIN_NAME, "\tavail is %" PRId64 "", avail);
     if (towrite > avail) {
         towrite = avail;
     }
 
     if (data->end > 0) {
-        TSDebug(PLUGIN_NAME, "data->end > 0, end=%ld", data->end);
+        //TSDebug(PLUGIN_NAME, "data->end > 0, end=%ld", data->end);
         if (donewrite <= data->start) {
             if (donewrite + towrite < data->start) {
 
@@ -145,48 +161,31 @@ handle_transform(TSCont contp)
             } else {
                 // 4 = 10 + 5 - 11
                 consume_size = donewrite + towrite - data->start;
+                TSDebug(PLUGIN_NAME, "donewrite <= data->start if donewrite=%ld,towrite=%ld,data->start=%ld", donewrite , towrite , data->start);
+                TSDebug(PLUGIN_NAME, "donewrite <= data->start if consume_size=%ld", consume_size);
                 // 4, 5-4
                 TSIOBufferCopy(TSVIOBufferGet(data->output_vio), TSVIOReaderGet(input_vio), consume_size,
                                towrite - consume_size);
             }
         } else {
             consume_size = towrite;
+            TSDebug(PLUGIN_NAME, "donewrite > data->start else consume_size=%ld", consume_size);
             TSIOBufferCopy(TSVIOBufferGet(data->output_vio), TSVIOReaderGet(input_vio), towrite, 0);
         }
     }
 
     TSDebug(PLUGIN_NAME, "consume_size=%ld", consume_size);
-    if (consume_size) {
-        //TSVIONBytesSet(data->output_vio, TSVIONDoneGet(data->output_vio) + consume_size);
-        TSVIONDoneSet(data->output_vio, TSVIONDoneGet(data->output_vio) + consume_size);
-        TSDebug(PLUGIN_NAME, "output_vio Done Get=%ld", TSVIONDoneGet(data->output_vio));
-    }
 
     TSIOBufferReaderConsume(TSVIOReaderGet(input_vio), towrite);
-
     TSVIONDoneSet(input_vio, TSVIONDoneGet(input_vio) + towrite);
 
-//    towrite = TSVIONTodoGet(input_vio);
-//    avail = TSIOBufferReaderAvail(TSVIOReaderGet(input_vio));
-//    if (towrite <= 0 || avail <= 0)
-//        goto LDone;
-//
-//    donewrite = TSVIONDoneGet(input_vio);
-//
-//    if (donewrite > end) {
-//        TSIOBufferReaderConsume(TSVIOReaderGet(input_vio), towrite);
-//
-//        TSVIONDoneSet(input_vio, TSVIONDoneGet(input_vio) + towrite);
-//    }
-
-
     LDone:
-    //if (TSVIONTodoGet(input_vio) > 0) {
     TSDebug(PLUGIN_NAME, "LDone todo=%ld, Done Get=%ld, range_length=%ld",TSVIONTodoGet(input_vio),
             TSVIONDoneGet(data->output_vio), data->range_length);
-    if (TSVIONTodoGet(input_vio) > 0 && TSVIONDoneGet(data->output_vio) < data->range_length) {
+    if (TSVIONTodoGet(input_vio) > 0) {
+        TSDebug(PLUGIN_NAME, "TSVIONTodoGet   xxxxxx");
         if (towrite > 0) {
-
+            TSDebug(PLUGIN_NAME, "TSVIONTodoGet towrite > 0");
             if (consume_size)
                 TSVIOReenable(data->output_vio);
 
@@ -194,12 +193,9 @@ handle_transform(TSCont contp)
         }
 
     } else {
-        //TSVIONBytesSet(data->output_vio, TSVIONDoneGet(input_vio));
-        //TSVIONBytesSet(data->output_vio, data->done_size);
-        TSVIONBytesSet(data->output_vio, TSVIONDoneGet(data->output_vio));
-        TSDebug(PLUGIN_NAME, "TS_EVENT_VCONN_WRITE_COMPLETE Done Get=%ld, range_length=%ld",
-                TSVIONDoneGet(data->output_vio), data->range_length);
-        //if (consume_size)
+
+        TSVIONBytesSet(data->output_vio, data->range_length);
+        TSDebug(PLUGIN_NAME, "last Done Get=%ld, input_vio Done=%ld", TSVIONDoneGet(data->output_vio),  TSVIONDoneGet(input_vio));
         TSVIOReenable(data->output_vio);
 
         TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_COMPLETE, input_vio);
@@ -250,7 +246,6 @@ static void
 transform_add(TSHttpTxn txnp, struct txndata *txn_state)
 {
     TSVConn connp;
-    TSVConn output_conn;
     if (!txn_state)
         return;
 
@@ -266,10 +261,6 @@ transform_add(TSHttpTxn txnp, struct txndata *txn_state)
 
     MyData *data;
     data = my_data_alloc();
-    data->output_buffer = TSIOBufferCreate();
-    data->output_reader = TSIOBufferReaderAlloc(data->output_buffer);
-    output_conn = TSTransformOutputVConnGet(connp);
-    data->output_vio = TSVConnWrite(output_conn, connp, data->output_reader, INT64_MAX);
     data->start = txn_state->start;
     data->end = txn_state->end;
     data->content_length = txn_state->content_length;
@@ -373,7 +364,7 @@ cache_lookup_handle(TSHttpTxn txnp, struct txndata *txn_state)
     TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdrp);
 
     txn_state->content_length = n;
-
+    TSDebug(PLUGIN_NAME, "content length=%ld",n);
     if(n <=0) {
         TSError("[%s] %s Not include content_length", PLUGIN_NAME, __FUNCTION__);
         return 0;
@@ -384,7 +375,7 @@ cache_lookup_handle(TSHttpTxn txnp, struct txndata *txn_state)
 static int
 transform_plugin(TSCont contp ATS_UNUSED, TSEvent event, void *edata)
 {
-    TSHttpTxn txnp = (TSHttpTxn)edata;
+    TSHttpTxn txnp            = static_cast<TSHttpTxn>(edata);
     struct txndata *txn_state = (struct txndata *)TSContDataGet(contp);
 
     TSDebug(PLUGIN_NAME, "Entering transform_plugin()");
@@ -431,7 +422,7 @@ TSRemapInit(TSRemapInterface *api_info, char *errbuf, int errbuf_size)
         return TS_ERROR;
     }
 
-    TSDebug(PLUGIN_NAME, "cache_range_requests remap is successfully initialized.");
+    TSDebug(PLUGIN_NAME, "ts_range remap is successfully initialized.");
     return TS_SUCCESS;
 }
 
@@ -471,29 +462,34 @@ TSRemapDoRemap(void *ih, TSHttpTxn txnp, TSRemapRequestInfo *rri)
 
     method = TSHttpHdrMethodGet(rri->requestBufp, rri->requestHdrp, &method_len);
     if (method != TS_HTTP_METHOD_GET) {
+        TSDebug(PLUGIN_NAME, "TSRemapDoRemap not TS_HTTP_METHOD_GET");
         return TSREMAP_NO_REMAP;
     }
 
     start = 0;
     end = 0;
     query = TSUrlHttpQueryGet(rri->requestBufp, rri->requestUrl, &query_len);
+    TSDebug(PLUGIN_NAME, "TSRemapDoRemap query=%s!",query);
     if(!query) {
+        TSDebug(PLUGIN_NAME, "TSRemapDoRemap query is null!");
         return TSREMAP_NO_REMAP;
     }
 
     f_start = strcasestr(query, "start=");
     if (!f_start) {
+        TSDebug(PLUGIN_NAME, "TSRemapDoRemap not found start=");
         return TSREMAP_NO_REMAP;
     }
-    start = strtol(f_start + 1, NULL, 10);
+    start = strtol(f_start + 6, NULL, 10);
 
     f_end = strcasestr(query, "&end=");
 
-    if(f_end != NULL) {
-        end = strtol(f_end + 1, NULL, 10);
+    if(f_end) {
+        end = strtol(f_end + 5, NULL, 10);
+        TSDebug(PLUGIN_NAME, "TSRemapDoRemap found end=%ld",end);
     }
 
-
+    TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld, end=%ld", start, end);
     if (start < 0 || end < 0 || start >= end) {
         return TSREMAP_NO_REMAP;
     }
