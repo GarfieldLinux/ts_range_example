@@ -182,13 +182,15 @@ handle_transform(TSCont contp)
     LDone:
     TSDebug(PLUGIN_NAME, "LDone todo=%ld, Done Get=%ld, range_length=%ld",TSVIONTodoGet(input_vio),
             TSVIONDoneGet(data->output_vio), data->range_length);
+    if (consume_size)
+        TSVIOReenable(data->output_vio);
+
     if (TSVIONTodoGet(input_vio) > 0) {
         TSDebug(PLUGIN_NAME, "TSVIONTodoGet   xxxxxx");
         if (towrite > 0) {
             TSDebug(PLUGIN_NAME, "TSVIONTodoGet towrite > 0");
-            if (consume_size)
-                TSVIOReenable(data->output_vio);
-
+//            if (consume_size)
+//                TSVIOReenable(data->output_vio);
             TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_READY, input_vio);
         }
 
@@ -196,7 +198,7 @@ handle_transform(TSCont contp)
 
         TSVIONBytesSet(data->output_vio, data->range_length);
         TSDebug(PLUGIN_NAME, "last Done Get=%ld, input_vio Done=%ld", TSVIONDoneGet(data->output_vio),  TSVIONDoneGet(input_vio));
-        TSVIOReenable(data->output_vio);
+//        TSVIOReenable(data->output_vio);
 
         TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_COMPLETE, input_vio);
     }
