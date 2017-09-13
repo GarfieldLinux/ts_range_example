@@ -150,7 +150,7 @@ handle_transform(TSCont contp)
                 TSIOBufferCopy(TSVIOBufferGet(data->output_vio), TSVIOReaderGet(input_vio), towrite, 0);
             } else {
                 // 4 = 10+5 - 11
-                consume_size = data->end - donewrite + 1;
+                consume_size = data->end - donewrite;
                 TSIOBufferCopy(TSVIOBufferGet(data->output_vio), TSVIOReaderGet(input_vio), consume_size, 0);
             }
         }
