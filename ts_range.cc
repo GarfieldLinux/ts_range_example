@@ -257,6 +257,8 @@ transform_add(TSHttpTxn txnp, struct txndata *txn_state)
     if (txn_state->end >= (txn_state->content_length -1))
         txn_state->end = 0;
 
+    TSHttpTxnUntransformedRespCache(txnp, 1);
+    TSHttpTxnTransformedRespCache(txnp, 0);
 
     TSDebug(PLUGIN_NAME, "Entering transform_add()");
     connp = TSTransformCreate(range_transform, txnp);
